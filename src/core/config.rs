@@ -39,12 +39,27 @@ pub struct GlobalConfig {
     /// Default host alias to use when not specified
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_host: Option<String>,
+
+    /// Hooks configuration for workspace lifecycle events
+    #[serde(default)]
+    pub hooks: HooksConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostConfig {
     /// Root directory for this host
     pub root: PathBuf,
+}
+
+/// Hooks configuration for workspace lifecycle events
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HooksConfig {
+    /// Hook script to run after creating a workspace
+    /// Receives environment variables:
+    /// - WTP_WORKSPACE_NAME: Name of the created workspace
+    /// - WTP_WORKSPACE_PATH: Full path to the workspace directory
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_create: Option<PathBuf>,
 }
 
 fn default_workspace_root() -> PathBuf {
@@ -61,6 +76,7 @@ impl Default for GlobalConfig {
             default_workspace: None,
             hosts: HashMap::new(),
             default_host: None,
+            hooks: HooksConfig::default(),
         }
     }
 }
@@ -115,6 +131,12 @@ impl GlobalConfig {
                     // Expand ~ in host roots
                     for host in cfg.hosts.values_mut() {
                         host.root = shellexpand::tilde(&host.root.to_string_lossy())
+                            .to_string()
+                            .into();
+                    }
+                    // Expand ~ in hook paths
+                    if let Some(ref mut hook_path) = cfg.hooks.on_create {
+                        *hook_path = shellexpand::tilde(&hook_path.to_string_lossy())
                             .to_string()
                             .into();
                     }

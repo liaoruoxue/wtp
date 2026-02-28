@@ -66,7 +66,7 @@ pub async fn execute(
                     "ℹ".yellow(),
                     args.workspace_name
                 );
-                manager.create_workspace(&args.workspace_name)?;
+                manager.create_workspace(&args.workspace_name, true).await?;
             } else {
                 anyhow::bail!(
                     "Workspace '{}' directory does not exist at {}. \
@@ -86,7 +86,7 @@ pub async fn execute(
                 "ℹ".yellow(),
                 args.workspace_name.cyan()
             );
-            manager.create_workspace(&args.workspace_name)?
+            manager.create_workspace(&args.workspace_name, true).await?
         } else {
             anyhow::bail!(
                 "Workspace '{}' does not exist. \

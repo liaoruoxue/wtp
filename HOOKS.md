@@ -1,6 +1,6 @@
-# Hooks - Safety Mechanisms
+# Hooks - Safety Mechanisms & Lifecycle Events
 
-This document describes safety hooks implemented in the wtp project.
+This document describes hooks implemented in the wtp project.
 
 ## Pre-Delete Hook
 
@@ -46,6 +46,82 @@ echo "Delete ~/.wtp? [yes/N]"
 
 # 3. Only proceed if user confirms
 ```
+
+## Workspace Lifecycle Hooks
+
+### On-Create Hook
+
+The `on_create` hook allows you to run a custom script every time a new workspace is created. This is useful for:
+
+- Copying standard configuration files (e.g., spec coding standards)
+- Installing workspace-specific tools or plugins
+- Initializing project templates
+- Setting up development environments
+- Creating README or documentation files
+
+### Configuration
+
+Add the hook to your `~/.wtp.toml` or `~/.wtp/config.toml`:
+
+```toml
+[hooks]
+on_create = "~/.wtp/hooks/on-create.sh"
+```
+
+### Environment Variables
+
+The hook script receives the following environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `WTP_WORKSPACE_NAME` | Name of the created workspace | `my-feature` |
+| `WTP_WORKSPACE_PATH` | Full path to the workspace directory | `/home/user/.wtp/workspaces/my-feature` |
+
+### Example Hook Script
+
+```bash
+#!/bin/bash
+# ~/.wtp/hooks/on-create.sh
+
+echo "Initializing workspace: $WTP_WORKSPACE_NAME"
+cd "$WTP_WORKSPACE_PATH"
+
+# Example: Create a README
+cat > README.md << EOF
+# $WTP_WORKSPACE_NAME
+
+Created: $(date)
+Workspace: $WTP_WORKSPACE_PATH
+EOF
+
+# Example: Copy spec coding config
+# cp ~/.templates/spec-coding-config.toml "$WTP_WORKSPACE_PATH/.spec.toml"
+
+# Example: Initialize direnv
+# echo "layout python" > "$WTP_WORKSPACE_PATH/.envrc"
+
+echo "✅ Workspace initialized!"
+```
+
+Make sure the script is executable:
+
+```bash
+chmod +x ~/.wtp/hooks/on-create.sh
+```
+
+### Skipping the Hook
+
+To create a workspace without running the hook, use the `--no-hook` flag:
+
+```bash
+wtp create my-workspace --no-hook
+```
+
+### Hook Behavior
+
+- **Hook failures don't block workspace creation**: If the hook script fails (non-zero exit code), a warning is displayed but the workspace is still created.
+- **Output is displayed**: stdout from the hook is printed to the terminal.
+- **Requires executable permissions**: On Unix systems, the hook script must have execute permissions.
 
 ## Code Changes
 

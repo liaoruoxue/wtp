@@ -101,6 +101,57 @@ main = "~/.wtp/workspaces/main"
 feature-x = "~/.wtp/workspaces/feature-x"
 ```
 
+### Hooks
+
+wtp supports running custom scripts on workspace lifecycle events. This is useful for initializing workspaces with standard configurations, tools, or documentation.
+
+#### On-Create Hook
+
+The `on_create` hook runs after a new workspace is created. Configure it in your config file:
+
+```toml
+[hooks]
+on_create = "~/.wtp/hooks/on-create.sh"
+```
+
+The hook script receives these environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `WTP_WORKSPACE_NAME` | Name of the created workspace | `my-feature` |
+| `WTP_WORKSPACE_PATH` | Full path to the workspace directory | `/home/user/.wtp/workspaces/my-feature` |
+
+**Example hook script** (`~/.wtp/hooks/on-create.sh`):
+
+```bash
+#!/bin/bash
+echo "Initializing workspace: $WTP_WORKSPACE_NAME"
+cd "$WTP_WORKSPACE_PATH"
+
+# Create a README
+cat > README.md << EOF
+# $WTP_WORKSPACE_NAME
+
+Created: $(date)
+EOF
+
+# Copy spec coding config (example)
+# cp ~/.templates/spec-coding.toml "$WTP_WORKSPACE_PATH/.spec.toml"
+
+echo "✅ Workspace initialized!"
+```
+
+Make the script executable:
+```bash
+chmod +x ~/.wtp/hooks/on-create.sh
+```
+
+**Notes:**
+- Use `wtp create <name> --no-hook` to skip the hook
+- Hook failures don't block workspace creation (a warning is shown)
+- Hook stdout is displayed to the terminal
+- On Unix, the script must have execute permissions
+
 ## Commands
 
 ### `wtp ls` - List Workspaces
@@ -126,9 +177,12 @@ All workspaces are stored under `workspace_root` (default: `~/.wtp/workspaces`).
 
 ```bash
 wtp create my-feature
+
+# Skip the on_create hook (if configured)
+wtp create my-feature --no-hook
 ```
 
-Creates a new workspace directory at `<workspace_root>/<NAME>` and registers it in the global config.
+Creates a new workspace directory at `<workspace_root>/<NAME>` and registers it in the global config. If an `on_create` hook is configured, it will be executed after the workspace is created.
 
 **Note:** The command outputs the path but cannot change your shell's directory. You'll need to `cd` manually:
 

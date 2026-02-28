@@ -19,6 +19,21 @@ root = "~/codes/gitlab.company.internal"
 # Default host alias to use when not specified
 # default_host = "gh"
 
+# Hooks - scripts to run on workspace lifecycle events
+# [hooks]
+# on_create = "~/.wtp/hooks/on-create.sh"
+#
+# The on_create hook receives the following environment variables:
+#   WTP_WORKSPACE_NAME  - Name of the created workspace
+#   WTP_WORKSPACE_PATH  - Full path to the workspace directory
+#
+# Example hook script:
+#   #!/bin/bash
+#   echo "Initializing workspace: $WTP_WORKSPACE_NAME"
+#   cd "$WTP_WORKSPACE_PATH"
+#   # Add your initialization logic here
+#   # e.g., copy spec coding configs, install plugins, etc.
+
 # Workspaces are auto-registered when created,
 # but you can manually define them here too
 [workspaces]

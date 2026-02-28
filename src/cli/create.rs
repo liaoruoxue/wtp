@@ -9,10 +9,14 @@ use crate::core::WorkspaceManager;
 pub struct CreateArgs {
     /// Name of the workspace to create
     pub name: String,
+
+    /// Skip running the on_create hook script
+    #[arg(long, help = "Skip running the on_create hook script")]
+    pub no_hook: bool,
 }
 
 pub async fn execute(args: CreateArgs, mut manager: WorkspaceManager) -> anyhow::Result<()> {
-    let workspace_path = manager.create_workspace(&args.name)?;
+    let workspace_path = manager.create_workspace(&args.name, !args.no_hook).await?;
 
     println!(
         "{} Created workspace '{}' at {}",

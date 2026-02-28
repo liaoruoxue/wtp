@@ -10,7 +10,7 @@ pub mod git;
 pub mod workspace;
 pub mod worktree;
 
-pub use config::{GlobalConfig, HostConfig};
+pub use config::{GlobalConfig, HooksConfig, HostConfig};
 pub use error::Result;
 pub use git::GitClient;
 pub use workspace::WorkspaceManager;

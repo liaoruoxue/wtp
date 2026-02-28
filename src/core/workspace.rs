@@ -6,6 +6,7 @@ use crate::core::fence::Fence;
 use crate::core::worktree::{RepoRef, WorktreeManager};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 
 /// Manages workspaces and their discovery
 pub struct WorkspaceManager {
@@ -44,7 +45,7 @@ impl WorkspaceManager {
     }
 
     /// Create a new workspace
-    pub fn create_workspace(&mut self, name: &str) -> Result<PathBuf> {
+    pub async fn create_workspace(&mut self, name: &str, run_hook: bool) -> Result<PathBuf> {
         // Check if workspace already exists in config
         if self.global_config.has_workspace(name) {
             return Err(WtpError::WorkspaceAlreadyExists {
@@ -70,7 +71,70 @@ impl WorkspaceManager {
         // Register in global config
         self.global_config.add_workspace(name.to_string(), workspace_path.clone())?;
 
+        // Run post-create hook if configured and enabled
+        if run_hook {
+            if let Err(e) = self.run_create_hook(name, &workspace_path).await {
+                eprintln!("Warning: Failed to run create hook: {}", e);
+            }
+        }
+
         Ok(workspace_path)
+    }
+
+    /// Run the on_create hook script
+    async fn run_create_hook(&self, name: &str, path: &Path) -> Result<()> {
+        let Some(hook_path) = &self.global_config.hooks.on_create else {
+            return Ok(());
+        };
+
+        if !hook_path.exists() {
+            return Err(WtpError::config(format!(
+                "Create hook not found: {}",
+                hook_path.display()
+            )));
+        }
+
+        // Check if hook is executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(hook_path)?;
+            let permissions = metadata.permissions();
+            if permissions.mode() & 0o111 == 0 {
+                return Err(WtpError::config(format!(
+                    "Create hook is not executable: {}",
+                    hook_path.display()
+                )));
+            }
+        }
+
+        // Run the hook with environment variables
+        let mut cmd = tokio::process::Command::new(hook_path);
+        cmd.env("WTP_WORKSPACE_NAME", name)
+            .env("WTP_WORKSPACE_PATH", path.as_os_str())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let output = cmd.output().await.map_err(|e| {
+            WtpError::config(format!("Failed to execute create hook: {}", e))
+        })?;
+
+        // Print hook stdout/stderr for user visibility
+        if !output.stdout.is_empty() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("{}", stdout);
+        }
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(WtpError::config(format!(
+                "Create hook failed with exit code {}: {}",
+                output.status.code().unwrap_or(-1),
+                stderr
+            )));
+        }
+
+        Ok(())
     }
 
     /// Initialize workspace directory structure
