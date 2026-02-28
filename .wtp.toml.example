@@ -1,0 +1,25 @@
+# Example wtp global configuration
+# Place this file at ~/.wtp.toml or ~/.wtp/config.toml
+
+# Root directory for all workspaces
+workspace_root = "~/.wtp/workspaces"
+
+# Default workspace to use (optional)
+# default_workspace = "main"
+
+# Host aliases - map short names to code roots
+# These allow you to use "gh:owner/repo" instead of full paths
+
+[hosts.gh]
+root = "~/codes/github.com"
+
+[hosts.gl]
+root = "~/codes/gitlab.company.internal"
+
+# Default host alias to use when not specified
+# default_host = "gh"
+
+# Workspaces are auto-registered when created,
+# but you can manually define them here too
+[workspaces]
+# main = "~/.wtp/workspaces/main"

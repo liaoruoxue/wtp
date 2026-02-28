@@ -1,0 +1,305 @@
+//! Import worktree command
+//!
+//! Import an external git repository's worktree into the current workspace.
+//! If you're in a workspace directory, it uses that workspace by default.
+//! Otherwise, use --workspace to specify the target.
+
+use clap::Args;
+use colored::Colorize;
+use std::env;
+use std::path::PathBuf;
+
+use crate::core::{
+    fence::Fence, GitClient, RepoRef, WorktreeEntry, WorktreeManager, WorkspaceManager,
+};
+
+#[derive(Args, Debug)]
+pub struct ImportArgs {
+    /// Path to the repository (relative to host root or absolute)
+    #[arg(value_name = "PATH")]
+    path: Option<String>,
+
+    /// Workspace to import into (defaults to current workspace if in one)
+    #[arg(short, long, value_name = "NAME")]
+    workspace: Option<String>,
+
+    /// Host alias to use for resolving the repository path
+    #[arg(short = 'H', long, value_name = "ALIAS")]
+    host: Option<String>,
+
+    /// Full repository path (alternative to PATH)
+    #[arg(short, long, value_name = "PATH", conflicts_with = "path")]
+    repo: Option<String>,
+
+    /// Branch name to use (defaults to workspace name)
+    #[arg(short = 'b', long)]
+    branch: Option<String>,
+
+    /// Base reference to create branch from
+    #[arg(short = 'B', long)]
+    base: Option<String>,
+}
+
+pub async fn execute(args: ImportArgs, manager: WorkspaceManager) -> anyhow::Result<()> {
+    let git = GitClient::new();
+    git.check_git()?;
+
+    // Determine target workspace
+    let (workspace_name, workspace_path) = if let Some(name) = args.workspace {
+        // Use explicitly specified workspace
+        let path = manager
+            .global_config()
+            .get_workspace_path(&name)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Workspace '{}' not found. Create it with: wtp create {}",
+                    name, name
+                )
+            })?;
+        (name, path)
+    } else {
+        // Try to detect current workspace from current directory
+        detect_current_workspace(&manager)?
+    };
+
+    if !workspace_path.exists() {
+        anyhow::bail!(
+            "Workspace '{}' directory does not exist at {}",
+            workspace_name,
+            workspace_path.display()
+        );
+    }
+
+    if !workspace_path.join(".wtp").exists() {
+        anyhow::bail!(
+            "Workspace '{}' exists in config but the directory is missing or corrupted.",
+            workspace_name
+        );
+    }
+
+    println!(
+        "Importing into workspace: {} at {}",
+        workspace_name.cyan(),
+        workspace_path.display().to_string().dimmed()
+    );
+
+    // Security: Check that workspace_path is within workspace_root
+    let fence = Fence::from_config(manager.global_config());
+    if !fence.is_within_boundary(&workspace_path) {
+        eprintln!(
+            "{} Warning: Workspace '{}' is outside workspace_root: {}",
+            "⚠️".yellow(),
+            workspace_name.yellow(),
+            fence.boundary().display()
+        );
+        eprintln!("Target path: {}", workspace_path.display().to_string().yellow());
+        eprint!("Are you sure you want to proceed? [y/N] ");
+        std::io::Write::flush(&mut std::io::stderr())?;
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+
+        if !input.trim().eq_ignore_ascii_case("y") {
+            anyhow::bail!("Operation cancelled");
+        }
+    }
+
+    // Resolve repository reference
+    let repo_ref = if let Some(repo) = args.repo {
+        // --repo flag provided
+        if args.path.is_some() {
+            anyhow::bail!("Cannot specify both <path> argument and --repo");
+        }
+        let expanded = shellexpand::tilde(&repo).to_string();
+        let path = PathBuf::from(expanded);
+        if !path.exists() {
+            anyhow::bail!("Repository not found: {}", path.display());
+        }
+        RepoRef::Absolute { path }
+    } else {
+        // Need a path argument
+        let path = args.path.ok_or_else(|| {
+            anyhow::anyhow!("Repository path required when not using --repo")
+        })?;
+
+        // Resolve using host aliases
+        resolve_repo_ref(&manager, &path, args.host.as_deref())?
+    };
+
+    // Get absolute path to repository
+    let hosts: std::collections::HashMap<String, PathBuf> = manager
+        .global_config()
+        .hosts
+        .iter()
+        .map(|(k, v)| (k.clone(), v.root.clone()))
+        .collect();
+    let repo_path = repo_ref.to_absolute_path(&hosts);
+
+    // Verify it's a git repository
+    if !git.is_in_git_repo(&repo_path) {
+        anyhow::bail!("{} is not a git repository", repo_path.display());
+    }
+
+    let repo_root = git.get_repo_root(Some(&repo_path))?;
+    println!(
+        "Repository: {} at {}",
+        repo_ref.display().cyan(),
+        repo_root.display().to_string().dimmed()
+    );
+
+    // Determine branch name
+    let branch = args.branch.unwrap_or_else(|| workspace_name.clone());
+
+    // Determine base reference
+    let base = args.base.unwrap_or_else(|| {
+        // Default to current HEAD
+        git.get_current_branch(&repo_root)
+            .unwrap_or_else(|_| "HEAD".to_string())
+    });
+
+    // Load existing worktrees
+    let worktree_manager = WorktreeManager::load(&workspace_path)?;
+
+    // Check if this repo already has a worktree in this workspace
+    if let Some(existing) = worktree_manager.config().find_by_repo(&repo_ref) {
+        anyhow::bail!(
+            "Repository '{}' is already in this workspace with branch '{}'.\n\
+             Each repository can only have one worktree per workspace.\n\
+             Existing worktree: {}",
+            repo_ref.display().yellow(),
+            existing.branch.yellow(),
+            existing.worktree_path.display()
+        );
+    }
+
+    // Generate worktree path (format: <repo_slug>/)
+    let repo_slug = repo_ref.slug();
+    let worktree_path_rel = worktree_manager.generate_worktree_path(&repo_slug);
+    let worktree_path_abs = workspace_path.join(&worktree_path_rel);
+
+    println!(
+        "Creating worktree at: {}",
+        worktree_path_abs.display().to_string().cyan()
+    );
+
+    // Check if worktree directory already exists
+    if worktree_path_abs.exists() {
+        anyhow::bail!(
+            "Worktree directory already exists at {}",
+            worktree_path_abs.display()
+        );
+    }
+
+    // Create the worktree
+    let branch_exists = git.branch_exists(&repo_root, &branch)?;
+
+    if branch_exists {
+        // Use existing branch
+        println!("Using existing branch: {}", branch.cyan());
+        git.add_worktree_for_branch(&repo_root, &worktree_path_abs, &branch)?;
+    } else {
+        // Create new branch
+        println!(
+            "Creating new branch '{}' from {}",
+            branch.cyan(),
+            base.dimmed()
+        );
+        git.create_worktree_with_branch(&repo_root, &worktree_path_abs, &branch, &base)?;
+    }
+
+    // Get HEAD commit
+    let head_commit = git.get_head_commit_full(&worktree_path_abs).ok();
+
+    // Record in worktree.toml
+    let mut worktree_manager = WorktreeManager::load(&workspace_path)?;
+    let entry = WorktreeEntry::new(
+        repo_ref,
+        branch,
+        worktree_path_rel,
+        Some(base),
+        head_commit,
+    );
+    worktree_manager.add_worktree(entry)?;
+
+    println!(
+        "{} Worktree imported successfully!",
+        "✓".green().bold()
+    );
+
+    Ok(())
+}
+
+/// Detect current workspace from current directory
+/// Returns (workspace_name, workspace_path) if found
+fn detect_current_workspace(
+    manager: &WorkspaceManager,
+) -> anyhow::Result<(String, PathBuf)> {
+    let current_dir = env::current_dir()?;
+    let mut check_dir = current_dir.as_path();
+
+    loop {
+        // Check if this directory has a .wtp subdirectory
+        if check_dir.join(".wtp").is_dir() {
+            // Find which workspace this is
+            for (name, path) in manager.global_config().workspaces.iter() {
+                if path == check_dir {
+                    return Ok((name.clone(), path.clone()));
+                }
+            }
+            // Directory has .wtp but not registered - might be an orphan
+            // Return with the directory name as workspace name
+            let name = check_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("workspace")
+                .to_string();
+            return Ok((name, check_dir.to_path_buf()));
+        }
+
+        // Move up
+        match check_dir.parent() {
+            Some(parent) => check_dir = parent,
+            None => break,
+        }
+    }
+
+    // Not in any workspace
+    anyhow::bail!(
+        "Not in a workspace. Either:\n\
+         1. Run this command from within a workspace directory, or\n\
+         2. Use --workspace <NAME> to specify the target workspace"
+    )
+}
+
+/// Resolve a repository reference from path and optional host
+fn resolve_repo_ref(
+    manager: &WorkspaceManager,
+    path: &str,
+    host: Option<&str>,
+) -> anyhow::Result<RepoRef> {
+    if let Some(host_alias) = host {
+        // Explicit host specified
+        let _host_root = manager
+            .global_config()
+            .get_host_root(host_alias)
+            .ok_or_else(|| anyhow::anyhow!("Host alias '{}' not found in config", host_alias))?;
+
+        Ok(RepoRef::Hosted {
+            host: host_alias.to_string(),
+            path: path.to_string(),
+        })
+    } else if let Some(default_host) = manager.global_config().default_host_alias() {
+        // Use default host
+        Ok(RepoRef::Hosted {
+            host: default_host.to_string(),
+            path: path.to_string(),
+        })
+    } else {
+        // Treat as absolute/relative path
+        let expanded = shellexpand::tilde(path).to_string();
+        let path_buf = PathBuf::from(&expanded);
+
+        Ok(RepoRef::Absolute { path: path_buf })
+    }
+}
