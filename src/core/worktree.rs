@@ -172,6 +172,21 @@ impl WorktreeToml {
     pub fn find_by_repo(&self, repo: &RepoRef) -> Option<&WorktreeEntry> {
         self.worktrees.iter().find(|w| w.repo == *repo)
     }
+
+    /// Find a worktree by repo slug (last component of the path)
+    pub fn find_by_slug(&self, slug: &str) -> Option<&WorktreeEntry> {
+        self.worktrees
+            .iter()
+            .find(|w| w.repo.slug() == slug || w.repo.display() == slug)
+    }
+
+    /// Remove a worktree entry by repo slug. Returns true if an entry was removed.
+    pub fn remove_by_slug(&mut self, slug: &str) -> bool {
+        let before = self.worktrees.len();
+        self.worktrees
+            .retain(|w| w.repo.slug() != slug && w.repo.display() != slug);
+        self.worktrees.len() < before
+    }
 }
 
 /// Manager for worktree operations
@@ -216,5 +231,14 @@ impl WorktreeManager {
         self.config.add_worktree(entry);
         self.save()?;
         Ok(())
+    }
+
+    /// Remove a worktree entry by slug and save. Returns true if an entry was removed.
+    pub fn remove_worktree(&mut self, slug: &str) -> crate::core::Result<bool> {
+        let removed = self.config.remove_by_slug(slug);
+        if removed {
+            self.save()?;
+        }
+        Ok(removed)
     }
 }
