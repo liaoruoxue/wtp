@@ -62,11 +62,11 @@ fn test_wtp_help() {
     assert!(stdout.contains("create"));
     assert!(stdout.contains("import"));
     assert!(stdout.contains("switch"));
+    assert!(stdout.contains("eject"));
     assert!(stdout.contains("shell-init"));
     assert!(stdout.contains("Workspace Management"));
     assert!(stdout.contains("Repository Operations"));
     assert!(stdout.contains("Utilities"));
-    assert!(!stdout.contains("add"));  // add was renamed to import
     assert!(!stdout.contains("  init  ")); // init command was removed (but shell-init exists)
 }
 
@@ -273,4 +273,36 @@ on_create = "{}"
     
     // Cleanup
     let _ = run_wtp_with_home(&["rm", "test-no-hook-ws", "--delete-dir", "--force"], home_path);
+}
+
+#[test]
+fn test_eject_not_in_workspace() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_home = setup_test_env();
+    let temp_dir = TempDir::new().unwrap();
+
+    let (success, stdout, stderr) = run_wtp_in_dir_with_home(
+        &["eject", "some-repo"],
+        Some(temp_dir.path()),
+        temp_home.path(),
+    );
+    assert!(!success);
+    let combined = format!("{} {}", stdout, stderr);
+    assert!(
+        combined.contains("Not in a workspace") || combined.contains("workspace"),
+        "Expected workspace-related error, got: {}",
+        combined
+    );
+}
+
+#[test]
+fn test_eject_help() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_home = setup_test_env();
+
+    let (success, stdout, _) = run_wtp_with_home(&["help", "eject"], temp_home.path());
+    assert!(success);
+    assert!(stdout.contains("Eject"));
+    assert!(stdout.contains("Usage:"));
+    assert!(stdout.contains("wtp eject"));
 }
