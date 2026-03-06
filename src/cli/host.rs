@@ -18,17 +18,21 @@ pub struct HostArgs {
 pub enum HostCommands {
     /// Add a new host alias
     Add {
+        /// Alias name (e.g., "gh", "gl", "bb")
         alias: String,
+        /// Root path for repositories under this host
         path: String,
     },
     /// List all configured hosts
     Ls,
     /// Remove a host alias
     Rm {
+        /// Alias name to remove
         alias: String,
     },
     /// Set the default host
     SetDefault {
+        /// Alias name to set as default
         alias: String,
     },
 }
