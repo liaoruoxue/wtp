@@ -138,12 +138,12 @@ pub fn derive_grouped_subcommand(input: TokenStream) -> TokenStream {
         let entry_lines = group_entries.iter().map(|(name, about, _)| {
             let padding = " ".repeat(max_name_len - name.len());
             quote! {
-                println!("  {}{}  {}", #name.green(), #padding, #about);
+                println!("  {}{}  {}", #name.cyan().bold(), #padding, #about);
             }
         });
 
         quote! {
-            println!("{}:", #group.green().bold());
+            println!("{}:", #group.bold());
             #(#entry_lines)*
             println!();
         }
@@ -159,26 +159,53 @@ pub fn derive_grouped_subcommand(input: TokenStream) -> TokenStream {
             }
 
             /// Print custom help with grouped subcommands
-            pub fn print_help(app_name: &str, version: &str, about: &str) {
+            pub fn print_help(cmd: &clap::Command) {
                 use colored::Colorize;
 
-                println!("{} {}", app_name.green().bold(), version);
+                let app_name = cmd.get_name();
+                let version = cmd.get_version().unwrap_or("");
+                let about = cmd.get_about().map(|s| s.to_string()).unwrap_or_default();
+
+                println!("{} {}", app_name.cyan().bold(), version);
                 println!("{}", about);
                 println!();
-                println!("{}: {} {}", "Usage".green().bold(), app_name.green(), "[OPTIONS] <COMMAND>".cyan());
+                println!("{}: {} {}", "Usage".bold(), app_name.cyan().bold(), "[OPTIONS] <COMMAND>".magenta());
                 println!();
-                
-                println!("Options:");
-                println!("  {}  Enable verbose output", "-v, --verbose".yellow());
-                println!("  {}  Print version", "-V, --version".yellow());
-                println!("  {}     Print help", "-h, --help".yellow());
+
+                // Auto-generate Options from clap command arguments
+                let mut options: Vec<(String, String)> = Vec::new();
+                for arg in cmd.get_arguments() {
+                    let short = arg.get_short();
+                    let long = arg.get_long();
+                    if short.is_none() && long.is_none() {
+                        continue;
+                    }
+                    let flag_str = match (short, long) {
+                        (Some(s), Some(l)) => format!("-{}, --{}", s, l),
+                        (Some(s), None) => format!("-{}", s),
+                        (None, Some(l)) => format!("    --{}", l),
+                        _ => unreachable!(),
+                    };
+                    let help = arg.get_help().map(|s| s.to_string()).unwrap_or_default();
+                    options.push((flag_str, help));
+                }
+                // Manually add -h, --help since disable_help_flag = true
+                options.push(("-h, --help".to_string(), "Print help".to_string()));
+
+                let max_flag_len = options.iter().map(|(f, _)| f.len()).max().unwrap_or(0);
+
+                println!("{}:", "Options".bold());
+                for (flag, help) in &options {
+                    let padding = " ".repeat(max_flag_len - flag.len());
+                    println!("  {}{}  {}", flag.blue(), padding, help);
+                }
                 println!();
-                
+
                 #(#print_help_body)*
-                
-                println!("Use {} {} for more information on a specific command.", 
-                         format!("{} help", app_name).green(),
-                         "<command>".cyan());
+
+                println!("Use {} {} for more information on a specific command.",
+                         format!("{} help", app_name).cyan().bold(),
+                         "<command>".magenta());
             }
         }
     };

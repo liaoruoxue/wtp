@@ -314,6 +314,33 @@ impl GitClient {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// Remove a worktree from a repository
+    pub fn remove_worktree(
+        &self,
+        repo_path: &Path,
+        worktree_path: &Path,
+        force: bool,
+    ) -> Result<()> {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(repo_path)
+            .arg("worktree")
+            .arg("remove");
+        if force {
+            cmd.arg("--force");
+        }
+        cmd.arg(worktree_path);
+
+        let output = cmd.output()?;
+        if !output.status.success() {
+            return Err(WtpError::git(format!(
+                "Failed to remove worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Get the stash count for a repository
     pub fn get_stash_count(&self, repo_path: &Path) -> Result<u32> {
         let output = Command::new("git")
