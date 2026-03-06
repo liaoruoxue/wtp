@@ -24,7 +24,7 @@ A CLI tool for managing git worktrees across multiple repositories in a polyrepo
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/wtp
+git clone https://github.com/eddix/wtp
 cd wtp
 cargo install --path .
 ```
@@ -183,19 +183,19 @@ cd $(wtp create my-feature 2>&1 | grep "Created" | awk '{print $NF}')
 ### `wtp rm <NAME>` - Remove a Workspace
 
 ```bash
-# Remove from config only (safe)
+# Remove workspace (ejects all worktrees first)
 wtp rm my-feature
 
-# Remove from config AND delete directory (⚠️ DANGER)
-wtp rm my-feature --delete-dir
-
-# Force deletion without confirmation
-wtp rm my-feature --delete-dir --force
+# Force removal even if worktrees have uncommitted changes
+wtp rm my-feature --force
 ```
 
-**⚠️ Warning:** `--delete-dir` permanently deletes the workspace directory and all its contents. Ensure all worktrees are properly committed and pushed first.
+This command:
+1. Ejects all worktrees via `git worktree remove` (one by one, with progress)
+2. Checks for leftover files in the workspace directory
+3. Removes the workspace directory if clean, or requires `--force` for extra files
 
-**Note:** All workspaces are always stored under `workspace_root` (default: `~/.wtp/workspaces`). This ensures consistent management and prevents fragmentation.
+If any worktree has uncommitted changes, the command will stop and list them (unless `--force` is used).
 
 ### Security Fence
 
@@ -528,15 +528,19 @@ cargo test
 src/
 ├── main.rs              # Entry point
 ├── cli/                 # CLI subcommands
-│   ├── mod.rs
-│   ├── ls.rs
+│   ├── mod.rs           # CLI entry point and help system
+│   ├── cd.rs
 │   ├── create.rs
+│   ├── eject.rs         # Eject a worktree from workspace
+│   ├── fuzzy.rs         # Fuzzy finder integration
 │   ├── host.rs          # Host alias management
 │   ├── import.rs
+│   ├── ls.rs
 │   ├── remove.rs
 │   ├── shell_init.rs
 │   ├── status.rs
-│   └── switch.rs
+│   ├── switch.rs
+│   └── theme.rs         # Unified styling for help output
 ├── core/                # Core business logic
 │   ├── mod.rs
 │   ├── config.rs        # Configuration management
@@ -549,8 +553,8 @@ src/
 
 ## Roadmap
 
-- [ ] Fuzzy finder integration (skim)
-- [ ] Worktree cleanup/synchronization commands
+- [x] Fuzzy finder integration (skim)
+- [x] Worktree cleanup/synchronization commands (`eject`, `rm`)
 - [ ] Shell completions
 - [ ] Config migration utilities
 
