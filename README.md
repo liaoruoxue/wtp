@@ -1,18 +1,30 @@
-# wtp - WorkTree for Polyrepo
+# wtp - Workspace with git workTree for Polyrepo
+
+[中文文档](README_CN.md)
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A CLI tool for managing git worktrees across multiple repositories in a polyrepo workflow.
+A CLI tool that builds **dynamic monorepo** workspaces from independent repositories using [git worktree](https://git-scm.com/docs/git-worktree).
 
-## Overview
+## Why wtp?
 
-`wtp` helps you manage parallel development across multiple git repositories by leveraging [git worktree](https://git-scm.com/docs/git-worktree). It allows you to:
+Monorepo is a popular approach for managing related codebases, but it's not always the right answer:
 
-- Create **workspaces** that group related worktrees from different repositories
-- Quickly switch your current repository to any workspace
-- View the status of all worktrees in a workspace at a glance
-- Use **host aliases** to simplify repository path references
+- **Too much context hurts AI performance.** When you ask an AI to optimize the "cancel order" UX, it may confuse the customer-facing mobile interaction with a same-named feature in the merchant back-office — simply because both live in the same repository. A narrower, task-specific context leads to better results.
+- **Some situations objectively call for separate repositories.** Migrating the remaining 5% of useful code from a legacy codebase into a modern repo doesn't mean you should dump 100% of the legacy code in first and let AI clean it up. That's messy. Keeping repos separate and pulling only what you need is the cleaner path.
+- **Monorepo boundaries are never universal.** For a small company, "everything in one repo" makes sense. In a large organization with hundreds of teams and services, no single monorepo can realistically encompass all the code you might need to touch for a given task.
+
+**wtp takes a different approach: the dynamic monorepo.**
+
+Your repositories stay independent — they have their own history, their own CI, their own ownership. But when a task requires working across multiple repos simultaneously, `wtp` assembles them into a unified workspace on the fly. When the task is done, the workspace is dissolved. No permanent coupling, no structural compromise.
+
+This gives you:
+
+- **Task-scoped context** — only the repos relevant to your current work, nothing more
+- **Zero migration cost** — no need to restructure existing repositories
+- **Flexible boundaries** — workspaces can span teams, orgs, or even Git hosting platforms
+- **Full git compatibility** — built on [git worktree](https://git-scm.com/docs/git-worktree), every repo stays a normal git repo
 
 ## Installation
 
@@ -563,13 +575,6 @@ src/
 │   ├── workspace.rs     # Workspace management
 │   └── worktree.rs      # Worktree data models
 ```
-
-## Roadmap
-
-- [x] Fuzzy finder integration (skim)
-- [x] Worktree cleanup/synchronization commands (`eject`, `rm`)
-- [x] Shell completions (zsh, bash, fish)
-- [ ] Config migration utilities
 
 ## License
 
